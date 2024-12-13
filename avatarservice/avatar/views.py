@@ -1,4 +1,5 @@
 from django.core.exceptions import ValidationError
+from django.core.files.uploadedfile import InMemoryUploadedFile
 from django.http import HttpResponse
 from django.http import JsonResponse
 from django.conf import settings
@@ -13,7 +14,81 @@ from rest_framework.views import APIView
 import logging
 import uuid
 import jwt
-import os
+import os, io
+from PIL import Image, UnidentifiedImageError
+
+
+def validate_image(file_obj, allowed_formats=None, max_size=None):
+    """
+    Comprehensive image validation using Pillow
+
+    Args:
+        file_obj: File-like object containing the image
+        allowed_formats (list, optional): List of allowed image formats
+        max_size int : Maximum size in MB allowed
+
+    Returns:
+        boolean: True if the image is valid
+    """
+    file_obj.seek(0)
+    if hasattr(file_obj, 'size'):
+        if file_obj.size > 5 * (1024 * 1024):
+            return False
+    file_obj.seek(0)
+    try:
+        with Image.open(file_obj) as img:
+            detected_format = img.format.upper() if img.format else None
+            if allowed_formats:
+                allowed_formats = [fmt.upper() for fmt in allowed_formats]
+                if detected_format not in allowed_formats:
+                    raise ValueError(f"Unsupported format. Allowed: {allowed_formats}")
+            if max_size:
+                max_width, max_height = max_size
+                if img.width > max_width or img.height > max_height:
+                    raise ValueError(f"Image exceeds maximum dimensions of {max_size}")
+            return True
+
+    except (UnidentifiedImageError, ValueError,Exception):
+        return False
+
+
+def convert_image(file_obj):
+    """
+    Convert and resize image to JPEG with enhanced error handling
+
+    Args:
+        file_obj: File-like object containing the image
+    Returns:
+        InMemoryUploadedFile: Django-compatible uploaded file object
+    """
+    # Reset file pointer to beginning
+    file_obj.seek(0)
+
+    try:
+        with Image.open(file_obj) as img:
+            img.thumbnail((200, 200), Image.Resampling.LANCZOS)
+            if img.mode in ('RGBA', 'LA'):
+                with Image.open("helpers_images/cyberpunk_backdrop.jpg") as background:
+                    background.thumbnail((200, 200), Image.Resampling.LANCZOS)
+                    background.paste(img, mask=img.split()[-1])
+                    img = background
+            elif img.mode != 'RGB':
+                img = img.convert('RGB')
+            buffer = io.BytesIO()
+            img.save(buffer, format='JPEG', quality=85)
+            buffer.seek(0)
+            return InMemoryUploadedFile(
+                file=buffer,           # file
+                field_name='image',    # field name in the model
+                name=f'avatar.jpg',    # filename
+                content_type='image/jpeg',  # MIME type
+                size=buffer.getbuffer().nbytes,  # file size
+                charset=None           # charset (not applicable for images)
+            )
+
+    except Exception as e:
+        # More specific error handling
+        raise ValueError(f"Image conversion failed: {str(e)}")
 
 
 class AvatarUploadView(APIView):
@@ -55,7 +130,6 @@ class AvatarUploadView(APIView):
         Handle avatar upload with JWT authentication
         """
         try:
-            # Validate token and extract payload
             token_payload = self.validate_jwt_token(request)
             user_id = token_payload.get('user_id')
             if not user_id:
@@ -63,13 +137,12 @@ class AvatarUploadView(APIView):
                     {"error": "No user_id found in token"},
                     status=status.HTTP_400_BAD_REQUEST
                     )
-            image = request.FILES.get('image') # penser a ajouter securite tests sur l'image
-            if not image:
+            image = request.FILES.get('image')
+            if not image or not validate_image(image, allowed_formats=['JPEG', 'PNG']):
                 return Response(
                     {"error": "invalid image provided"},
                     status=status.HTTP_400_BAD_REQUEST
                     )
-
         except ValidationError as e:
             return Response(
                 {"error": str(e)},
@@ -85,7 +158,7 @@ class AvatarUploadView(APIView):
             old_img_path  =f"images/{avatar.uuid}.jpg"
             if (os.path.exists(old_img_path)):
                 os.remove(old_img_path)
-            avatar.image = image
+            avatar.image = convert_image(file_obj=image)
             avatar.uuid = uuid.uuid4()
             avatar.save()
             return Response(
@@ -112,7 +185,7 @@ def get_image(request, img_id):
             logging.info(f"returning image from id: {img_id}");
             return response
     except (Avatar.DoesNotExist,FileNotFoundError):
-            with open('default_image/avatar_default.jpg', 'rb') as image_file:
+            with open('helpers_images/avatar_default.jpg', 'rb') as image_file:
                 response = HttpResponse(image_file.read(), content_type='image/jpeg')
                 response['Cache-Control'] = 'max-age=3600'  # duree cache a ajuster
                 logging.info(f"uuid not found returning fallback image");
@@ -131,7 +204,6 @@ class AvatarListView(APIView):
         Raises:
             ValidationError: If token is invalid
         """
-        # Get Authorization header
         auth_header = request.META.get('HTTP_AUTHORIZATION', '')
 
         if not auth_header.startswith('Bearer '):
