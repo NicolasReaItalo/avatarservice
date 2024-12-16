@@ -204,13 +204,14 @@ class AvatarUploadView(APIView):
 
             avatar.save()
             return Response(
-                {"message": f"Image uploaded successfully {avatar.uuid}"}
+                {"message": f"Image updated successfully" , "uuid": avatar.uuid}
                 )
         except Avatar.DoesNotExist:
             avatar = Avatar.objects.create(
             Userid= user_id,
             image= convert_image(file_obj=image)
             )
+            avatar.save()
             return Response(
                 {"message": "Image uploaded successfully", "uuid": avatar.uuid},
                   status=201
