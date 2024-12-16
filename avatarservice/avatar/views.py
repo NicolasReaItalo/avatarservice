@@ -66,10 +66,9 @@ def convert_image(file_obj):
 
     try:
         with Image.open(file_obj) as img:
-            img.thumbnail((200, 200), Image.Resampling.LANCZOS)
+            img.thumbnail((400, 400))
             if img.mode in ('RGBA', 'LA'):
                 with Image.open("helpers_images/cyberpunk_backdrop.jpg") as background:
-                    background.thumbnail((200, 200), Image.Resampling.LANCZOS)
                     background.paste(img, mask=img.split()[-1])
                     img = background
             elif img.mode != 'RGB':
@@ -93,7 +92,7 @@ def convert_image(file_obj):
 
 def very_unique_uuid(new_uuid, avatar_list, max_recursion):
     if max_recursion <= 0:
-        raise RuntimeError('very_unique_uuid: max depth recusion')
+        raise RuntimeError('very_unique_uuid: max depth recursion')
     for avatar in avatar_list:
         if avatar.uuid == new_uuid:
             max_recursion -= 1
