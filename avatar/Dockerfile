@@ -1,17 +1,7 @@
 FROM python
 
-# # Install system dependencies
-# RUN apt-get update && apt-get install -y \
-#     curl \
-#     build-essential \
-#     libpq-dev \
-#     redis-server \
-#     && rm -rf /var/lib/apt/lists/*
+WORKDIR /avatar_images
 
-# Set up a working directory (used as mount target)
-WORKDIR /avatarservice
-
-# Upgrade pip and install project dependencies
 COPY avatar/requirements.txt ./
 RUN pip install  --upgrade pip \
     && pip install  -r requirements.txt
