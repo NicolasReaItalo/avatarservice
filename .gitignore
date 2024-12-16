@@ -3,3 +3,4 @@ __pycache__
 images
 avatarservice/db.sqlite3
 avatarservice/avatar/migrations
+*.sqlite3

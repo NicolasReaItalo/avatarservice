@@ -66,16 +66,41 @@ def convert_image(file_obj):
 
     try:
         with Image.open(file_obj) as img:
-            img.thumbnail((400, 400))
-            if img.mode in ('RGBA', 'LA'):
+            # Calculate the scale and crop to ensure image fills 400x400
+            # Determine the scaling ratio to match the smaller dimension
+            width, height = img.size
+            scale_width = 400 / width
+            scale_height = 400 / height
+            scale = max(scale_width, scale_height)
+
+            # Resize image
+            new_width = int(width * scale)
+            new_height = int(height * scale)
+            resized_img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
+
+            # Crop to exactly 400x400
+            left = (new_width - 400) / 2
+            top = (new_height - 400) / 2
+            right = left + 400
+            bottom = top + 400
+
+            cropped_img = resized_img.crop((left, top, right, bottom))
+
+            # Handle transparency if needed
+            if cropped_img.mode in ('RGBA', 'LA'):
                 with Image.open("helpers_images/cyberpunk_backdrop.jpg") as background:
-                    background.paste(img, mask=img.split()[-1])
-                    img = background
-            elif img.mode != 'RGB':
-                img = img.convert('RGB')
+                    background.paste(cropped_img, mask=cropped_img.split()[-1])
+                    cropped_img = background
+
+            # Ensure RGB mode
+            if cropped_img.mode != 'RGB':
+                cropped_img = cropped_img.convert('RGB')
+
+            # Save to buffer
             buffer = io.BytesIO()
-            img.save(buffer, format='JPEG', quality=85)
+            cropped_img.save(buffer, format='JPEG', quality=85)
             buffer.seek(0)
+
             return InMemoryUploadedFile(
                 file=buffer,           # file
                 field_name='image',    # field name in the model
