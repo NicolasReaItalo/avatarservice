@@ -91,7 +91,17 @@ def convert_image(file_obj):
         raise ValueError(f"Image conversion failed: {str(e)}")
 
 
+def very_unique_uuid(new_uuid, avatar_list, max_recursion):
+    if max_recursion <= 0:
+        raise RuntimeError('very_unique_uuid: max depth recusion')
+    for avatar in avatar_list:
+        if avatar.uuid == new_uuid:
+            max_recursion -= 1
+            return very_unique_uuid(uuid.uuid4())
+    return new_uuid
+
 class AvatarUploadView(APIView):
+
     def validate_jwt_token(self, request):
         """
         Custom JWT token validation method.
@@ -159,15 +169,23 @@ class AvatarUploadView(APIView):
             if (os.path.exists(old_img_path)):
                 os.remove(old_img_path)
             avatar.image = convert_image(file_obj=image)
-            avatar.uuid = uuid.uuid4()
+            try:
+                avatar.uuid = very_unique_uuid(uuid.uuid4(),
+                              avatar_list = Avatar.objects.all().iterator(),
+                              max_recursion=10)
+            except RuntimeError:
+                return Response(
+                {"error": "Unexpected error occurred"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
             avatar.save()
             return Response(
                 {"message": f"Image uploaded successfully {avatar.uuid}"}
                 )
         except Avatar.DoesNotExist:
             avatar = Avatar.objects.create(
-            Userid=user_id,
-            image=image
+            Userid= user_id,
+            image= convert_image(file_obj=image)
             )
             return Response(
                 {"message": "Image uploaded successfully", "uuid": avatar.uuid},
@@ -182,7 +200,7 @@ def get_image(request, img_id):
         with open(avatar.image.path, 'rb') as image_file:
             response = HttpResponse(image_file.read(), content_type='image/jpeg')
             response['Cache-Control'] = 'max-age=3600'  # duree cache a ajuster
-            logging.info(f"returning image from id: {img_id}");
+            logging.info(f"returning image from id: {img_id}")
             return response
     except (Avatar.DoesNotExist,FileNotFoundError):
             with open('helpers_images/avatar_default.jpg', 'rb') as image_file:
